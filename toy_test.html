@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>轻喃 · 档位测试台（真实协议版）</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box;
+            font-family: 'Songti SC', 'STSong', 'SimSun', '宋体', serif;
+            -webkit-tap-highlight-color: transparent; }
+        body { background: #f5f0eb; color: #2c2c2c; min-height: 100vh; padding: 16px 14px calc(20px + env(safe-area-inset-bottom)); }
+        h1 { font-size: 19px; text-align: center; margin-bottom: 4px; letter-spacing: 1px; }
+        .sub { text-align: center; font-size: 12px; color: #8a7a6e; margin-bottom: 14px; }
+        .card { background: #fff; border-radius: 16px; padding: 14px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .btn { border: none; border-radius: 24px; padding: 10px 18px; font-size: 14px; cursor: pointer;
+               background: #c5a47e; color: #fff; font-family: inherit; flex: 1; min-width: 120px; }
+        .btn:active { transform: scale(0.96); filter: brightness(0.92); }
+        .btn.ghost { background: #f0ebe6; color: #6a5f56; }
+        .btn.danger { background: #d98a7a; }
+        #status { text-align: center; font-size: 13px; color: #8a7a6e; min-height: 20px; margin: 8px 0 4px; }
+        #big-display { text-align: center; font-size: 38px; font-weight: 600; color: #2c2c2c;
+                       background: #faf8f6; border-radius: 14px; padding: 16px 8px; border: 1px solid #e8e0da; }
+        #big-display small { display: block; font-size: 13px; font-weight: 400; color: #b0a398; margin-top: 4px; }
+        .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+        .lvl { border: 1px solid #e8e0da; background: #faf8f6; border-radius: 12px; padding: 12px 4px;
+               text-align: center; cursor: pointer; font-family: inherit; color: #2c2c2c; font-size: 13px; }
+        .lvl.on { background: #c5a47e; border-color: #c5a47e; color: #fff; }
+        .lvl b { display: block; font-size: 15px; }
+        .lvl:active { transform: scale(0.94); }
+        .auto-card { border-left: 4px solid #c5a47e; }
+        .auto-hint { font-size: 12px; color: #8a7a6e; line-height: 1.6; margin-top: 8px; }
+        .log { background: #262a31; color: #cdd6d0; border-radius: 12px; padding: 10px; font-size: 12px;
+               font-family: Consolas, monospace; max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
+        .heat { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>轻喃 · 档位测试台</h1>
+    <div class="sub">真实协议版（55 03 ... aa）· 先连接，再按档位测试</div>
+
+    <div class="card">
+        <div class="row">
+            <button class="btn" id="btn-connect">连接玩具</button>
+            <button class="btn ghost" id="btn-disconnect" style="display:none;">断开</button>
+        </div>
+        <div class="row" style="justify-content:center;gap:14px;margin-top:8px;">
+            <label style="font-size:12px;color:#8a7a6e;display:flex;align-items:center;gap:4px;">
+                <input type="checkbox" id="use-addr" checked> 按地址过滤 QINGNAN
+            </label>
+        </div>
+        <div id="status">未连接</div>
+        <div id="big-display">--<small id="big-sub">点「连接玩具」开始</small></div>
+        <div class="heat">
+            <label style="font-size:12px;color:#8a7a6e;display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="heat-toggle" style="width:16px;height:16px;"> 同时开启加热（可随档位切换）
+            </label>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="row"><span class="label">手动档位</span></div>
+        <div class="levels" id="manual-levels"></div>
+    </div>
+
+    <div class="card auto-card">
+        <div class="row">
+            <button class="btn" id="btn-auto">开始自动测试</button>
+            <button class="btn danger" id="btn-stop-auto" style="display:none;">停止</button>
+        </div>
+        <div class="auto-hint">
+            点「开始自动测试」后，网页每 3.5 秒自动发送一个档位值（停/10/20/25/30/40/50/60/70/80/90/100）。
+            你只需盯着玩具，把每一档的感觉告诉我（例如："这档最轻"、"这档是波动"、"这档最强"）。
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="row"><span class="label">发送日志</span></div>
+        <div class="log" id="log">（连接后显示已发送的字节）</div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+            var TARGET_ADDR = '41:42:f0:f2:d2:75';
+
+            var btnConnect = document.getElementById('btn-connect');
+            var btnDisconnect = document.getElementById('btn-disconnect');
+            var btnAuto = document.getElementById('btn-auto');
+            var btnStopAuto = document.getElementById('btn-stop-auto');
+            var statusEl = document.getElementById('status');
+            var big = document.getElementById('big-display');
+            var bigSub = document.getElementById('big-sub');
+            var logEl = document.getElementById('log');
+            var useAddr = document.getElementById('use-addr');
+            var heatToggle = document.getElementById('heat-toggle');
+
+            var device = null;
+            var server = null;
+            var writeChars = [];
+            var selectedChar = null;
+            var sending = false;
+            var autoTimer = null;
+
+            function log(txt) {
+                var d = new Date();
+                var t = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+                logEl.textContent = '[' + t + '] ' + txt + '\n' + logEl.textContent;
+            }
+            function setStatus(s) { statusEl.textContent = s; }
+            function showBig(main, sub) { big.textContent = main; if (sub) bigSub.textContent = sub; else bigSub.textContent = ''; }
+            function addrOf(d) {
+                var a = d.address || '';
+                if (a === 'unknown' || a === '') a = d.id || '';
+                return a.toLowerCase();
+            }
+            function isTarget(d) {
+                var n = (d.name || '').toLowerCase();
+                var a = addrOf(d);
+                if (useAddr.checked) return a.indexOf(TARGET_ADDR) !== -1 || a.indexOf(TARGET_ADDR.replace(/:/g, '')) !== -1;
+                return n.indexOf('qingnan') !== -1 || a.indexOf(TARGET_ADDR) !== -1;
+            }
+
+            async function collectWriteChars(srv) {
+                var list = [];
+                try {
+                    var services = await srv.getPrimaryServices();
+                    for (var i = 0; i < services.length; i++) {
+                        var chars = await services[i].getCharacteristics();
+                        for (var j = 0; j < chars.length; j++) {
+                            var c = chars[j];
+                            if (c.properties.write || c.properties.writeWithoutResponse) list.push(c);
+                        }
+                    }
+                } catch (e) { log('枚举特征失败：' + e.message); }
+                return list;
+            }
+
+            // 真实协议：5503 [bitmap] [choucha] [xuanzhuan] [zhengdong] [rujia] [houanmo] [delay4] aa
+            // 仅震动：bitmap=04；打开加热时 bitmap=14（震动+加热）
+            function buildCmd(vibValue, heatOn) {
+                var bitmap = (heatOn ? 0x14 : 0x04);
+                var vibHex = parseInt(vibValue).toString(16).padStart(2, '0');
+                var s = '5503' + bitmap.toString(16).padStart(2, '0') + '0000' + vibHex + '0000' + '0000' + 'aa';
+                var bytes = [];
+                for (var i = 0; i < s.length; i += 2) bytes.push(parseInt(s.substr(i, 2), 16));
+                return bytes;
+            }
+
+            btnConnect.addEventListener('click', async function() {
+                if (!navigator.bluetooth) {
+                    alert('需 Chrome/Edge 且 https 或 localhost');
+                    return;
+                }
+                setStatus('正在选择设备...');
+                try {
+                    device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: ['0000fff0-0000-1000-8000-00805f9b34fb', '0000ffe0-0000-1000-8000-00805f9b34fb']
+                    });
+                } catch (e) { setStatus('取消或失败：' + e.message); return; }
+                if (!isTarget(device)) setStatus('未匹配 QINGNAN（选中了 ' + (device.name || device.id) + '），继续连接该设备。');
+                try {
+                    setStatus('连接中：' + (device.name || device.id) + '...');
+                    server = await device.gatt.connect();
+                    writeChars = await collectWriteChars(server);
+                    selectedChar = null;
+                    for (var i = 0; i < writeChars.length; i++) {
+                        var u = writeChars[i].uuid.toLowerCase();
+                        if (u.indexOf('fff5') !== -1) { selectedChar = writeChars[i]; break; }
+                    }
+                    if (!selectedChar && writeChars.length) selectedChar = writeChars[0];
+                    if (!selectedChar) { setStatus('未找到可写特征'); return; }
+                    btnConnect.style.display = 'none';
+                    btnDisconnect.style.display = 'block';
+                    setStatus('已连接 · 写特征：' + selectedChar.uuid);
+                    log('连接成功：' + (device.name || '') + ' / ' + addrOf(device));
+                    log('写特征：' + writeChars.map(function(c) { return c.uuid; }).join(', '));
+                    showBig('已连接', '点击下方档位测试');
+                    device.addEventListener('gattserverdisconnected', function() {
+                        setStatus('已断开');
+                        btnConnect.style.display = 'block';
+                        btnDisconnect.style.display = 'none';
+                        showBig('--', '点「连接玩具」重新连接');
+                    });
+                } catch (e) { setStatus('连接失败：' + e.message); }
+            });
+
+            btnDisconnect.addEventListener('click', function() {
+                if (device && device.gatt.connected) { try { device.gatt.disconnect(); } catch (e) {} }
+            });
+
+            async function sendBytes(bytes) {
+                if (!selectedChar) { setStatus('未连接或未选特征'); return; }
+                if (sending) { log('上一指令发送中，忽略'); return; }
+                sending = true;
+                var hex = bytes.map(function(b) { return b.toString(16).padStart(2, '0'); }).join(' ');
+                log('发送 → ' + hex);
+                try {
+                    var buf = new Uint8Array(bytes);
+                    if (selectedChar.properties.writeWithoutResponse && !selectedChar.properties.write) {
+                        await selectedChar.writeValueWithoutResponse(buf);
+                    } else {
+                        await selectedChar.writeValueWithResponse(buf);
+                    }
+                } catch (e) { log('发送失败：' + e.message); }
+                sending = false;
+            }
+
+            // 手动档位：停 + 从低到高强度
+            var manualMap = [
+                { name: '停', v: 0 },
+                { name: '1', v: 10 },
+                { name: '2', v: 20 },
+                { name: '3', v: 30 },
+                { name: '4', v: 40 },
+                { name: '5', v: 50 },
+                { name: '6', v: 60 },
+                { name: '7', v: 70 },
+                { name: '8', v: 80 },
+                { name: '9', v: 90 },
+                { name: '10', v: 100 }
+            ];
+            var levelsEl = document.getElementById('manual-levels');
+            var lastBtn = null;
+            manualMap.forEach(function(m) {
+                var b = document.createElement('button');
+                b.className = 'lvl';
+                b.innerHTML = '<b>' + (m.v === 0 ? '停' : m.name) + '</b><small>' + (m.v === 0 ? '00' : m.v) + '</small>';
+                b.addEventListener('click', function() {
+                    var bytes = buildCmd(m.v, heatToggle.checked);
+                    sendBytes(bytes);
+                    if (lastBtn) lastBtn.classList.remove('on');
+                    b.classList.add('on');
+                    lastBtn = b;
+                    showBig(m.v === 0 ? '停止' : m.v + ' %', '0x' + parseInt(m.v).toString(16).padStart(2, '0') + (heatToggle.checked ? ' · 加热' : ''));
+                });
+                levelsEl.appendChild(b);
+            });
+
+            var autoSequence = [
+                { label: '停', v: 0 },
+                { label: '10', v: 10 },
+                { label: '20', v: 20 },
+                { label: '25', v: 25 },
+                { label: '30', v: 30 },
+                { label: '40', v: 40 },
+                { label: '50', v: 50 },
+                { label: '60', v: 60 },
+                { label: '70', v: 70 },
+                { label: '80', v: 80 },
+                { label: '90', v: 90 },
+                { label: '100', v: 100 },
+                { label: '停', v: 0 }
+            ];
+            var autoIdx = 0;
+
+            btnAuto.addEventListener('click', function() {
+                if (!selectedChar) { setStatus('请先连接玩具'); return; }
+                btnAuto.style.display = 'none';
+                btnStopAuto.style.display = 'block';
+                autoIdx = 0;
+                log('—— 自动测试开始 ——');
+                autoTimer = setInterval(function() {
+                    if (autoIdx >= autoSequence.length) {
+                        log('自动测试完成（回到停止）。');
+                        clearInterval(autoTimer);
+                        btnAuto.style.display = 'block';
+                        btnStopAuto.style.display = 'none';
+                        showBig('完成', '已发完全部强度');
+                        return;
+                    }
+                    var item = autoSequence[autoIdx];
+                    sendBytes(buildCmd(item.v, heatToggle.checked));
+                    showBig(item.v === 0 ? '停' : item.v + ' %', '强度 ' + item.v + ' · 序号 ' + (autoIdx + 1) + '/' + autoSequence.length + (heatToggle.checked ? ' · 加热' : ''));
+                    autoIdx++;
+                }, 3500);
+            });
+
+            btnStopAuto.addEventListener('click', function() {
+                if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+                btnAuto.style.display = 'block';
+                btnStopAuto.style.display = 'none';
+                sendBytes(buildCmd(0, false));
+                log('自动测试已停止，已发停止指令。');
+                showBig('已停止', '');
+            });
+
+            log('真实协议版：连接后即可调档（55 03 04 00 00 [强度] 00 00 00 00 aa）');
+        })();
+    </script>
+</body>
+</html>
